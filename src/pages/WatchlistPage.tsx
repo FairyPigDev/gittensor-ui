@@ -1,6 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Avatar,
   Box,
+  Card,
+  Chip,
+  FormControl,
+  InputAdornment,
+  MenuItem,
+  Select,
+  TablePagination,
+  TextField,
   Typography,
   Button,
   alpha,
@@ -11,11 +20,16 @@ import {
   Tab,
   Tabs,
   Badge,
+  useTheme,
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { Page } from '../components/layout';
 import { TopMinersTable, SEO, WatchlistButton } from '../components';
-import { LinkBox } from '../components/common/linkBehavior';
+import {
+  DataTable,
+  type DataTableColumn,
+} from '../components/common/DataTable';
 import { useAllMiners, useAllPrs, useReposAndWeights, useIssues } from '../api';
 import { mapAllMinersToStats } from '../utils/minerMapper';
 import {
@@ -27,7 +41,11 @@ import {
 import { isMergedPr, isClosedUnmergedPr } from '../utils/prStatus';
 import { getIssueStatusMeta } from '../utils/issueStatus';
 import { formatTokenAmount } from '../utils/format';
-import { STATUS_COLORS } from '../theme';
+import { STATUS_COLORS, TEXT_OPACITY } from '../theme';
+import type { Repository, CommitLog } from '../api/models/Dashboard';
+import type { IssueBounty } from '../api/models/Issues';
+
+const VALID_ROWS = [10, 25, 50];
 
 const TAB_ORDER: readonly WatchlistCategory[] = [
   'miners',
@@ -318,90 +336,140 @@ const WatchlistPage: React.FC = () => {
   );
 };
 
-const rowSx = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 2,
-  px: 1.5,
-  py: 1.25,
-  borderRadius: 1,
-  transition: 'background 0.15s',
-  '&:hover': { backgroundColor: 'surface.light' },
-};
-
-const primaryTextSx = {
-  fontSize: '0.85rem',
-  color: 'text.primary',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const secondaryTextSx = {
-  fontSize: '0.7rem',
-  color: 'text.secondary',
-  mt: 0.25,
-};
-
-interface WatchedItemRowProps {
-  href: string;
-  primary: React.ReactNode;
-  secondary?: React.ReactNode;
-  actions: React.ReactNode;
+interface WatchlistTableHeaderProps {
+  rowsPerPage: number;
+  onRowsPerPageChange: (rows: number) => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  searchPlaceholder?: string;
 }
 
-// LinkBox wraps only the navigable text area (not the whole row) so the
-// star button — a real <button> — is a sibling of the <a>, not a descendant.
-// Keeps middle-click / Cmd-click / "Open in new tab" working natively while
-// avoiding invalid interactive-inside-anchor HTML.
-const WatchedItemRow: React.FC<WatchedItemRowProps> = ({
-  href,
-  primary,
-  secondary,
-  actions,
-}) => (
-  <Box sx={rowSx}>
-    <LinkBox
-      href={href}
-      linkState={{ backLabel: 'Back to Watchlist' }}
-      sx={{ display: 'block', minWidth: 0, flex: 1 }}
+const WatchlistTableHeader: React.FC<WatchlistTableHeaderProps> = ({
+  rowsPerPage,
+  onRowsPerPageChange,
+  searchQuery,
+  onSearchChange,
+  searchPlaceholder = 'Search...',
+}) => {
+  const theme = useTheme();
+  return (
+    <Box
+      sx={{
+        px: 2,
+        py: 1.5,
+        borderBottom: `1px solid ${theme.palette.border.light}`,
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 2,
+      }}
     >
-      <Typography sx={primaryTextSx}>{primary}</Typography>
-      {secondary !== undefined && (
-        <Typography sx={secondaryTextSx}>{secondary}</Typography>
-      )}
-    </LinkBox>
-    <Stack direction="row" spacing={2} alignItems="center">
-      {actions}
-    </Stack>
-  </Box>
-);
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <FormControl size="small">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: alpha(
+                  theme.palette.common.white,
+                  TEXT_OPACITY.secondary,
+                ),
+                fontSize: '0.8rem',
+              }}
+            >
+              Rows:
+            </Typography>
+            <Select
+              value={rowsPerPage}
+              onChange={(e) => onRowsPerPageChange(e.target.value as number)}
+              sx={{
+                color: theme.palette.text.primary,
+                backgroundColor: alpha(theme.palette.common.black, 0.4),
+                fontSize: '0.8rem',
+                height: '36px',
+                borderRadius: 2,
+                minWidth: '80px',
+                '& fieldset': { borderColor: theme.palette.border.light },
+                '&:hover fieldset': {
+                  borderColor: theme.palette.border.medium,
+                },
+                '&.Mui-focused fieldset': { borderColor: 'primary.main' },
+                '& .MuiSelect-select': { py: 0.75 },
+              }}
+            >
+              {VALID_ROWS.map((n) => (
+                <MenuItem key={n} value={n}>
+                  {n}
+                </MenuItem>
+              ))}
+            </Select>
+          </Box>
+        </FormControl>
 
-interface StatusPillProps {
-  label: string;
-  color: string;
-  background: string;
+        <TextField
+          placeholder={searchPlaceholder}
+          size="small"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon
+                  sx={{
+                    color: alpha(
+                      theme.palette.common.white,
+                      TEXT_OPACITY.muted,
+                    ),
+                    fontSize: '1rem',
+                  }}
+                />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            width: '200px',
+            '& .MuiOutlinedInput-root': {
+              color: theme.palette.text.primary,
+              backgroundColor: alpha(theme.palette.common.black, 0.4),
+              fontSize: '0.8rem',
+              height: '36px',
+              borderRadius: 2,
+              '& fieldset': { borderColor: theme.palette.border.light },
+              '&:hover fieldset': {
+                borderColor: theme.palette.border.medium,
+              },
+              '&.Mui-focused fieldset': { borderColor: 'primary.main' },
+            },
+          }}
+        />
+      </Box>
+    </Box>
+  );
+};
+
+interface WatchlistCardWrapperProps {
+  children: React.ReactNode;
 }
 
-const StatusPill: React.FC<StatusPillProps> = ({
-  label,
-  color,
-  background,
-}) => (
-  <Typography
-    sx={{
-      fontSize: '0.72rem',
-      color,
-      backgroundColor: background,
-      px: 1,
-      py: 0.25,
-      borderRadius: 0.75,
-    }}
-  >
-    {label}
-  </Typography>
-);
+const WatchlistCardWrapper: React.FC<WatchlistCardWrapperProps> = ({
+  children,
+}) => {
+  const theme = useTheme();
+  return (
+    <Card
+      sx={{
+        backgroundColor: 'background.default',
+        border: `1px solid ${theme.palette.border.light}`,
+        borderRadius: 3,
+        overflow: 'hidden',
+      }}
+      elevation={0}
+    >
+      {children}
+    </Card>
+  );
+};
 
 const MinersList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
   const { data: allMinersStats, isLoading } = useAllMiners();
@@ -436,83 +504,364 @@ const MinersList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
 };
 
 const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
-  const { data: repos } = useReposAndWeights();
+  const theme = useTheme();
+  const { data: repos, isLoading } = useReposAndWeights();
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState('');
+
   const items = useMemo(() => {
     if (!repos) return [];
     const set = new Set(itemKeys.map((k) => k.toLowerCase()));
     return repos.filter((r) => set.has(r.fullName.toLowerCase()));
   }, [repos, itemKeys]);
 
+  const filtered = useMemo(() => {
+    if (!searchQuery) return items;
+    const q = searchQuery.toLowerCase();
+    return items.filter((r) => r.fullName.toLowerCase().includes(q));
+  }, [items, searchQuery]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery]);
+
+  const paginated = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filtered.slice(start, start + rowsPerPage);
+  }, [filtered, page, rowsPerPage]);
+
+  const columns = useMemo<DataTableColumn<Repository>[]>(
+    () => [
+      {
+        key: 'repository',
+        header: 'Repository',
+        renderCell: (repo) => (
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}
+          >
+            <Avatar
+              src={`https://avatars.githubusercontent.com/${repo.owner}`}
+              sx={{ width: 24, height: 24, borderRadius: 1, flexShrink: 0 }}
+            />
+            <Typography
+              sx={{
+                fontSize: '0.85rem',
+                color: STATUS_COLORS.info,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {repo.fullName}
+            </Typography>
+          </Box>
+        ),
+      },
+      {
+        key: 'weight',
+        header: 'Weight',
+        width: '140px',
+        align: 'right',
+        renderCell: (repo) => (
+          <Typography
+            sx={{
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              color: STATUS_COLORS.merged,
+            }}
+          >
+            {parseFloat(String(repo.weight)).toFixed(2)}
+          </Typography>
+        ),
+      },
+      {
+        key: 'watch',
+        header: '',
+        width: '60px',
+        align: 'center',
+        renderCell: (repo) => (
+          <WatchlistButton category="repos" itemKey={repo.fullName} />
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
-    <Stack spacing={0.5} sx={{ width: '100%' }}>
-      {items.map((repo) => (
-        <WatchedItemRow
-          key={repo.fullName}
-          href={`/miners/repository?name=${encodeURIComponent(repo.fullName)}`}
-          primary={repo.fullName}
-          actions={
-            <>
-              <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>
-                weight {parseFloat(String(repo.weight)).toFixed(2)}
-              </Typography>
-              <WatchlistButton category="repos" itemKey={repo.fullName} />
-            </>
-          }
-        />
-      ))}
-    </Stack>
+    <WatchlistCardWrapper>
+      <DataTable<Repository>
+        columns={columns}
+        rows={paginated}
+        getRowKey={(repo) => repo.fullName}
+        getRowHref={(repo) =>
+          `/miners/repository?name=${encodeURIComponent(repo.fullName)}`
+        }
+        linkState={{ backLabel: 'Back to Watchlist' }}
+        isLoading={isLoading}
+        minWidth="600px"
+        header={
+          <WatchlistTableHeader
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(n) => {
+              setRowsPerPage(n);
+              setPage(0);
+            }}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder="Search repositories..."
+          />
+        }
+        emptyState={
+          <Box sx={{ p: 4, textAlign: 'center' }}>
+            <Typography
+              sx={{
+                color: alpha(theme.palette.common.white, TEXT_OPACITY.tertiary),
+              }}
+            >
+              {searchQuery
+                ? 'No repositories match your search'
+                : 'No repositories found'}
+            </Typography>
+          </Box>
+        }
+        pagination={
+          <TablePagination
+            rowsPerPageOptions={[]}
+            component="div"
+            count={filtered.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={(_e, newPage) => setPage(newPage)}
+            onRowsPerPageChange={() => {}}
+            showFirstButton
+            showLastButton
+          />
+        }
+      />
+    </WatchlistCardWrapper>
   );
 };
 
 const BountiesList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
-  const { data: allIssues } = useIssues();
+  const theme = useTheme();
+  const { data: allIssues, isLoading } = useIssues();
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState('');
+
   const items = useMemo(() => {
     if (!allIssues) return [];
-    // Stored keys and issue ids are compared as strings to avoid any
-    // numeric coercion drift if issue ids ever become composite.
     const set = new Set(itemKeys);
     return allIssues.filter((issue) => set.has(String(issue.id)));
   }, [allIssues, itemKeys]);
 
+  const filtered = useMemo(() => {
+    if (!searchQuery) return items;
+    const q = searchQuery.toLowerCase();
+    return items.filter(
+      (i) =>
+        i.repositoryFullName.toLowerCase().includes(q) ||
+        i.title?.toLowerCase().includes(q) ||
+        String(i.issueNumber).includes(q),
+    );
+  }, [items, searchQuery]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery]);
+
+  const paginated = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filtered.slice(start, start + rowsPerPage);
+  }, [filtered, page, rowsPerPage]);
+
+  const columns = useMemo<DataTableColumn<IssueBounty>[]>(
+    () => [
+      {
+        key: 'id',
+        header: 'ID',
+        width: '60px',
+        renderCell: (issue) => (
+          <Typography
+            sx={{
+              fontSize: '0.8rem',
+              color: alpha(theme.palette.common.white, 0.6),
+            }}
+          >
+            #{issue.id}
+          </Typography>
+        ),
+      },
+      {
+        key: 'repository',
+        header: 'Repository',
+        width: '200px',
+        cellSx: { overflow: 'hidden' },
+        renderCell: (issue) => (
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}
+          >
+            <Avatar
+              src={`https://avatars.githubusercontent.com/${issue.repositoryFullName.split('/')[0]}`}
+              sx={{ width: 24, height: 24, borderRadius: 1, flexShrink: 0 }}
+            />
+            <Typography
+              sx={{
+                fontSize: '0.85rem',
+                color: STATUS_COLORS.info,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {issue.repositoryFullName}
+            </Typography>
+          </Box>
+        ),
+      },
+      {
+        key: 'issue',
+        header: 'Issue',
+        renderCell: (issue) => (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {issue.title && (
+              <Typography
+                sx={{
+                  fontSize: '0.85rem',
+                  color: 'text.primary',
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {issue.title}
+              </Typography>
+            )}
+            <Typography
+              sx={{
+                fontSize: '0.75rem',
+                color: alpha(theme.palette.common.white, TEXT_OPACITY.tertiary),
+              }}
+            >
+              #{issue.issueNumber}
+            </Typography>
+          </Box>
+        ),
+      },
+      {
+        key: 'bounty',
+        header: 'Bounty',
+        width: '120px',
+        align: 'right',
+        renderCell: (issue) => (
+          <Typography
+            sx={{
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              color: STATUS_COLORS.merged,
+            }}
+          >
+            {formatTokenAmount(issue.bountyAmount)} ل
+          </Typography>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        width: '110px',
+        align: 'center',
+        renderCell: (issue) => {
+          const meta = getIssueStatusMeta(issue.status);
+          return (
+            <Chip
+              label={meta.text}
+              size="small"
+              sx={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                backgroundColor: meta.bgColor,
+                color: meta.color,
+                border: `1px solid ${meta.color}40`,
+              }}
+            />
+          );
+        },
+      },
+      {
+        key: 'watch',
+        header: '',
+        width: '60px',
+        align: 'center',
+        renderCell: (issue) => (
+          <WatchlistButton category="bounties" itemKey={String(issue.id)} />
+        ),
+      },
+    ],
+    [theme],
+  );
+
   return (
-    <Stack spacing={0.5} sx={{ width: '100%' }}>
-      {items.map((issue) => {
-        const meta = getIssueStatusMeta(issue.status);
-        return (
-          <WatchedItemRow
-            key={issue.id}
-            href={`/bounties/details?id=${issue.id}`}
-            primary={
-              issue.title || `${issue.repositoryFullName} #${issue.issueNumber}`
-            }
-            secondary={`${issue.repositoryFullName} #${issue.issueNumber}`}
-            actions={
-              <>
-                <StatusPill
-                  label={meta.text}
-                  color={meta.color}
-                  background={meta.bgColor}
-                />
-                <Typography
-                  sx={{ fontSize: '0.75rem', color: 'status.success' }}
-                >
-                  {formatTokenAmount(issue.bountyAmount)} ل
-                </Typography>
-                <WatchlistButton
-                  category="bounties"
-                  itemKey={String(issue.id)}
-                />
-              </>
-            }
+    <WatchlistCardWrapper>
+      <DataTable<IssueBounty>
+        columns={columns}
+        rows={paginated}
+        getRowKey={(issue) => issue.id}
+        getRowHref={(issue) => `/bounties/details?id=${issue.id}`}
+        linkState={{ backLabel: 'Back to Watchlist' }}
+        isLoading={isLoading}
+        minWidth="800px"
+        header={
+          <WatchlistTableHeader
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(n) => {
+              setRowsPerPage(n);
+              setPage(0);
+            }}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder="Search bounties..."
           />
-        );
-      })}
-    </Stack>
+        }
+        emptyState={
+          <Box sx={{ p: 4, textAlign: 'center' }}>
+            <Typography
+              sx={{
+                color: alpha(theme.palette.common.white, TEXT_OPACITY.tertiary),
+              }}
+            >
+              {searchQuery
+                ? 'No bounties match your search'
+                : 'No bounties found'}
+            </Typography>
+          </Box>
+        }
+        pagination={
+          <TablePagination
+            rowsPerPageOptions={[]}
+            component="div"
+            count={filtered.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={(_e, newPage) => setPage(newPage)}
+            onRowsPerPageChange={() => {}}
+            showFirstButton
+            showLastButton
+          />
+        }
+      />
+    </WatchlistCardWrapper>
   );
 };
 
 const PRsList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
-  const { data: allPrs } = useAllPrs();
+  const theme = useTheme();
+  const { data: allPrs, isLoading } = useAllPrs();
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState('');
+
   const items = useMemo(() => {
     if (!allPrs) return [];
     const set = new Set(itemKeys);
@@ -521,43 +870,171 @@ const PRsList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
     );
   }, [allPrs, itemKeys]);
 
-  return (
-    <Stack spacing={0.5} sx={{ width: '100%' }}>
-      {items.map((pr) => {
-        const key = serializePRKey(pr.repository, pr.pullRequestNumber);
-        const merged = isMergedPr(pr);
-        const closed = isClosedUnmergedPr(pr);
-        const statusLabel = merged ? 'Merged' : closed ? 'Closed' : 'Open';
-        const statusColor = merged
-          ? STATUS_COLORS.merged
-          : closed
-            ? STATUS_COLORS.closed
-            : STATUS_COLORS.open;
-        return (
-          <WatchedItemRow
-            key={key}
-            href={`/miners/pr?repo=${encodeURIComponent(pr.repository)}&number=${pr.pullRequestNumber}`}
-            primary={`#${pr.pullRequestNumber} ${pr.pullRequestTitle}`}
-            secondary={`${pr.repository} · ${pr.author}`}
-            actions={
-              <>
-                <StatusPill
-                  label={statusLabel}
-                  color={statusColor}
-                  background={alpha(statusColor, 0.12)}
-                />
-                <Typography
-                  sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
-                >
-                  {parseFloat(pr.score || '0').toFixed(2)}
-                </Typography>
-                <WatchlistButton category="prs" itemKey={key} />
-              </>
-            }
+  const filtered = useMemo(() => {
+    if (!searchQuery) return items;
+    const q = searchQuery.toLowerCase();
+    return items.filter(
+      (pr) =>
+        pr.repository.toLowerCase().includes(q) ||
+        pr.pullRequestTitle.toLowerCase().includes(q) ||
+        pr.author.toLowerCase().includes(q) ||
+        String(pr.pullRequestNumber).includes(q),
+    );
+  }, [items, searchQuery]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery]);
+
+  const paginated = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filtered.slice(start, start + rowsPerPage);
+  }, [filtered, page, rowsPerPage]);
+
+  const columns = useMemo<DataTableColumn<CommitLog>[]>(
+    () => [
+      {
+        key: 'pr',
+        header: 'Pull Request',
+        renderCell: (pr) => (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Typography
+              sx={{
+                fontSize: '0.85rem',
+                color: 'text.primary',
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              #{pr.pullRequestNumber} {pr.pullRequestTitle}
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: '0.75rem',
+                color: alpha(theme.palette.common.white, TEXT_OPACITY.tertiary),
+              }}
+            >
+              {pr.repository} · {pr.author}
+            </Typography>
+          </Box>
+        ),
+      },
+      {
+        key: 'score',
+        header: 'Score',
+        width: '100px',
+        align: 'right',
+        renderCell: (pr) => (
+          <Typography
+            sx={{
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              color: alpha(theme.palette.common.white, 0.8),
+            }}
+          >
+            {parseFloat(pr.score || '0').toFixed(2)}
+          </Typography>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        width: '110px',
+        align: 'center',
+        renderCell: (pr) => {
+          const merged = isMergedPr(pr);
+          const closed = isClosedUnmergedPr(pr);
+          const statusLabel = merged ? 'Merged' : closed ? 'Closed' : 'Open';
+          const statusColor = merged
+            ? STATUS_COLORS.merged
+            : closed
+              ? STATUS_COLORS.closed
+              : STATUS_COLORS.open;
+          return (
+            <Chip
+              label={statusLabel}
+              size="small"
+              sx={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                backgroundColor: alpha(statusColor, 0.12),
+                color: statusColor,
+                border: `1px solid ${statusColor}40`,
+              }}
+            />
+          );
+        },
+      },
+      {
+        key: 'watch',
+        header: '',
+        width: '60px',
+        align: 'center',
+        renderCell: (pr) => (
+          <WatchlistButton
+            category="prs"
+            itemKey={serializePRKey(pr.repository, pr.pullRequestNumber)}
           />
-        );
-      })}
-    </Stack>
+        ),
+      },
+    ],
+    [theme],
+  );
+
+  return (
+    <WatchlistCardWrapper>
+      <DataTable<CommitLog>
+        columns={columns}
+        rows={paginated}
+        getRowKey={(pr) => serializePRKey(pr.repository, pr.pullRequestNumber)}
+        getRowHref={(pr) =>
+          `/miners/pr?repo=${encodeURIComponent(pr.repository)}&number=${pr.pullRequestNumber}`
+        }
+        linkState={{ backLabel: 'Back to Watchlist' }}
+        isLoading={isLoading}
+        minWidth="700px"
+        header={
+          <WatchlistTableHeader
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(n) => {
+              setRowsPerPage(n);
+              setPage(0);
+            }}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder="Search pull requests..."
+          />
+        }
+        emptyState={
+          <Box sx={{ p: 4, textAlign: 'center' }}>
+            <Typography
+              sx={{
+                color: alpha(theme.palette.common.white, TEXT_OPACITY.tertiary),
+              }}
+            >
+              {searchQuery
+                ? 'No pull requests match your search'
+                : 'No pull requests found'}
+            </Typography>
+          </Box>
+        }
+        pagination={
+          <TablePagination
+            rowsPerPageOptions={[]}
+            component="div"
+            count={filtered.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={(_e, newPage) => setPage(newPage)}
+            onRowsPerPageChange={() => {}}
+            showFirstButton
+            showLastButton
+          />
+        }
+      />
+    </WatchlistCardWrapper>
   );
 };
 
