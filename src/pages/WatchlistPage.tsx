@@ -12,12 +12,16 @@ import {
   Chip,
   Collapse,
   CircularProgress,
+  FormControl,
   FormControlLabel,
   Grid,
   IconButton,
   InputAdornment,
+  MenuItem,
   Popover,
+  Select,
   Switch,
+  TablePagination,
   TextField,
   Tooltip,
   Typography,
@@ -44,6 +48,8 @@ import PersonIcon from '@mui/icons-material/Person';
 import FolderIcon from '@mui/icons-material/Folder';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { Page } from '../components/layout';
 import { useTwitterStickySidebar } from '../hooks/useTwitterStickySidebar';
@@ -1413,6 +1419,8 @@ const RepoCard: React.FC<{ repo: WatchedRepoStats; maxWeight: number }> = ({
 };
 
 const ROWS_PER_PAGE = 50;
+const REPO_ROWS_OPTIONS_LIST = [10, 25, 50] as const;
+const REPO_ROWS_OPTIONS_CARDS = [12, 24, 48] as const;
 
 const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
   const { data: repos } = useReposAndWeights();
@@ -1422,9 +1430,10 @@ const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
   const [viewMode, setViewMode] = useWatchlistViewMode();
   const [showChart, setShowChart] = useState(false);
   const [useLogScale, setUseLogScale] = useState(false);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(
+    REPO_ROWS_OPTIONS_LIST[0],
+  );
   const [page, setPage] = useState(0);
-  const observerTarget = useRef<HTMLDivElement>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const [sortField, setSortField] = useState<RepoSortKey>('weight');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -1530,28 +1539,9 @@ const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
   }, [filtered, sortField, sortOrder]);
 
   const paged = useMemo(
-    () => sorted.slice(0, (page + 1) * ROWS_PER_PAGE),
-    [sorted, page],
+    () => sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
+    [sorted, page, rowsPerPage],
   );
-
-  useEffect(() => {
-    const target = observerTarget.current;
-    if (!target) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setIsLoadingMore(true);
-          setTimeout(() => {
-            setPage((p) => p + 1);
-            setIsLoadingMore(false);
-          }, 400);
-        }
-      },
-      { root: null, rootMargin: '0px 0px 400px 0px', threshold: 0 },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [page, filtered.length]);
 
   const maxWeight = useMemo(
     () =>
@@ -1693,110 +1683,259 @@ const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
         borderColor: 'border.light',
         backgroundColor: 'transparent',
         overflow: 'hidden',
+        maxHeight: '85vh',
+        display: 'flex',
+        flexDirection: 'column',
+        '& .MuiTableContainer-root': {
+          flex: 1,
+          overflowY: 'auto',
+          ...scrollbarSx,
+        },
       }}
     >
-      <WatchlistPortal
-        filterContent={
-          <Box
+      {/* Toolbar */}
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          borderBottom: '1px solid',
+          borderColor: 'border.light',
+        }}
+      >
+        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+          <FilterButton
+            label="All"
+            count={counts.all}
+            color={STATUS_COLORS.neutral}
+            isActive={statusFilter === 'all'}
+            onClick={() => setStatusFilter('all')}
+          />
+          <FilterButton
+            label="Active"
+            count={counts.active}
+            color={STATUS_COLORS.success}
+            isActive={statusFilter === 'active'}
+            onClick={() => setStatusFilter('active')}
+          />
+          <FilterButton
+            label="Inactive"
+            count={counts.inactive}
+            color={STATUS_COLORS.closed}
+            isActive={statusFilter === 'inactive'}
+            onClick={() => setStatusFilter('inactive')}
+          />
+        </Box>
+        <Tooltip title={showChart ? 'Hide Chart' : 'Show Chart'}>
+          <IconButton
+            onClick={() => setShowChart((v) => !v)}
+            size="small"
             sx={{
-              display: 'flex',
-              gap: 0.5,
-              alignItems: 'center',
-              flexWrap: 'wrap',
+              color: showChart ? 'text.primary' : 'text.tertiary',
+              border: '1px solid',
+              borderColor: 'border.light',
+              borderRadius: 2,
+              padding: '6px',
+              '&:hover': {
+                backgroundColor: 'surface.light',
+                borderColor: 'border.medium',
+              },
             }}
           >
-            <FilterButton
-              label="All"
-              count={counts.all}
-              color={STATUS_COLORS.neutral}
-              isActive={statusFilter === 'all'}
-              onClick={() => setStatusFilter('all')}
-            />
-            <FilterButton
-              label="Active"
-              count={counts.active}
-              color={STATUS_COLORS.success}
-              isActive={statusFilter === 'active'}
-              onClick={() => setStatusFilter('active')}
-            />
-            <FilterButton
-              label="Inactive"
-              count={counts.inactive}
-              color={STATUS_COLORS.closed}
-              isActive={statusFilter === 'inactive'}
-              onClick={() => setStatusFilter('inactive')}
-            />
+            {showChart ? (
+              <TableChartIcon fontSize="small" />
+            ) : (
+              <BarChartIcon fontSize="small" />
+            )}
+          </IconButton>
+        </Tooltip>
+        {showChart && (
+          <FormControlLabel
+            control={
+              <Switch
+                checked={useLogScale}
+                onChange={(e) => setUseLogScale(e.target.checked)}
+                size="small"
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked': {
+                    color: 'primary.main',
+                  },
+                  '& .MuiSwitch-track': { backgroundColor: 'border.medium' },
+                }}
+              />
+            }
+            label={
+              <Typography
+                variant="body2"
+                sx={{ fontSize: '0.8rem', color: 'text.secondary' }}
+              >
+                Log Scale
+              </Typography>
+            }
+          />
+        )}
+        <FormControl size="small">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{ color: 'text.secondary', fontSize: '0.8rem' }}
+            >
+              Rows:
+            </Typography>
+            <Select
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(e.target.value as number);
+                setPage(0);
+              }}
+              sx={{
+                color: 'text.primary',
+                backgroundColor: 'background.default',
+                fontSize: '0.8rem',
+                height: '36px',
+                borderRadius: 2,
+                minWidth: '80px',
+                '& fieldset': { borderColor: 'border.light' },
+                '&:hover fieldset': { borderColor: 'border.medium' },
+                '&.Mui-focused fieldset': { borderColor: 'primary.main' },
+                '& .MuiSelect-select': { py: 0.75 },
+              }}
+            >
+              {(viewMode === 'cards'
+                ? REPO_ROWS_OPTIONS_CARDS
+                : REPO_ROWS_OPTIONS_LIST
+              ).map((n) => (
+                <MenuItem key={n} value={n}>
+                  {n}
+                </MenuItem>
+              ))}
+            </Select>
           </Box>
-        }
-        extraContent={
-          <>
-            <Box>
-              <OptionsLabel>Chart</OptionsLabel>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Tooltip title={showChart ? 'Hide Chart' : 'Show Chart'}>
-                  <IconButton
-                    onClick={() => setShowChart((v) => !v)}
-                    size="small"
-                    sx={{
-                      color: showChart ? 'text.primary' : 'text.tertiary',
-                      border: '1px solid',
-                      borderColor: 'border.light',
-                      borderRadius: 2,
-                      padding: '6px',
-                      '&:hover': {
-                        backgroundColor: 'surface.light',
-                        borderColor: 'border.medium',
-                      },
-                    }}
-                  >
-                    {showChart ? (
-                      <TableChartIcon fontSize="small" />
-                    ) : (
-                      <BarChartIcon fontSize="small" />
-                    )}
-                  </IconButton>
-                </Tooltip>
-                {showChart && (
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={useLogScale}
-                        onChange={(e) => setUseLogScale(e.target.checked)}
-                        size="small"
-                        sx={{
-                          '& .MuiSwitch-switchBase.Mui-checked': {
-                            color: 'primary.main',
-                          },
-                          '& .MuiSwitch-track': {
-                            backgroundColor: 'border.medium',
-                          },
-                        }}
-                      />
-                    }
-                    label={
-                      <Typography
-                        variant="body2"
-                        sx={{ fontSize: '0.8rem', color: 'text.secondary' }}
-                      >
-                        Log Scale
-                      </Typography>
-                    }
-                  />
-                )}
-              </Box>
-            </Box>
-          </>
-        }
-        searchValue={searchQuery}
-        searchPlaceholder="Search repositories..."
-        onSearchChange={setSearchQuery}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        viewModeToggle={
-          <ReposViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-        }
-        hasActiveFilter={statusFilter !== 'all'}
-      />
+        </FormControl>
+        <TextField
+          placeholder="Search repositories..."
+          size="small"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'text.tertiary', fontSize: '1rem' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            width: '220px',
+            '& .MuiOutlinedInput-root': {
+              color: 'text.primary',
+              fontFamily: '"JetBrains Mono", monospace',
+              backgroundColor: 'background.default',
+              fontSize: '0.8rem',
+              height: '36px',
+              borderRadius: 2,
+              '& fieldset': { borderColor: 'border.light' },
+              '&:hover fieldset': { borderColor: 'border.medium' },
+              '&.Mui-focused fieldset': { borderColor: 'primary.main' },
+            },
+          }}
+        />
+        <Box sx={{ ml: 'auto' }}>
+          <ReposViewModeToggle
+            viewMode={viewMode}
+            onChange={(next) => {
+              setViewMode(next);
+              setRowsPerPage(
+                next === 'cards'
+                  ? REPO_ROWS_OPTIONS_CARDS[0]
+                  : REPO_ROWS_OPTIONS_LIST[0],
+              );
+              setPage(0);
+            }}
+          />
+        </Box>
+      </Box>
+
+      {viewMode === 'cards' && (
+        <Box
+          sx={{
+            px: 2,
+            pb: 2,
+            pt: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 1,
+            borderBottom: '1px solid',
+            borderColor: 'border.light',
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{ color: 'text.secondary', fontSize: '0.8rem' }}
+          >
+            Sort:
+          </Typography>
+          <Select
+            size="small"
+            value={sortField}
+            onChange={(e) => {
+              const next = e.target.value as RepoSortKey;
+              setSortField(next);
+              setSortOrder(next === 'name' ? 'asc' : 'desc');
+              setPage(0);
+            }}
+            sx={{
+              color: 'text.primary',
+              backgroundColor: 'background.default',
+              fontSize: '0.8rem',
+              height: '36px',
+              borderRadius: 2,
+              minWidth: '140px',
+              '& fieldset': { borderColor: 'border.light' },
+              '&:hover fieldset': { borderColor: 'border.medium' },
+              '&.Mui-focused fieldset': { borderColor: 'primary.main' },
+              '& .MuiSelect-select': { py: 0.75 },
+            }}
+          >
+            <MenuItem value="weight">Weight</MenuItem>
+            <MenuItem value="totalScore">Total Score</MenuItem>
+            <MenuItem value="totalPRs">PRs</MenuItem>
+            <MenuItem value="contributors">Contributors</MenuItem>
+            <MenuItem value="name">Repository</MenuItem>
+            <MenuItem value="status">Status</MenuItem>
+          </Select>
+          <Tooltip title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}>
+            <IconButton
+              onClick={() => {
+                setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+                setPage(0);
+              }}
+              size="small"
+              aria-label={
+                sortOrder === 'asc' ? 'Sort descending' : 'Sort ascending'
+              }
+              sx={{
+                color: 'text.primary',
+                border: '1px solid',
+                borderColor: 'border.light',
+                borderRadius: 2,
+                padding: '6px',
+                '&:hover': {
+                  backgroundColor: 'surface.light',
+                  borderColor: 'border.medium',
+                },
+              }}
+            >
+              {sortOrder === 'asc' ? (
+                <ArrowUpwardIcon fontSize="small" />
+              ) : (
+                <ArrowDownwardIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
 
       <Collapse in={showChart}>
         <Box
@@ -1839,6 +1978,8 @@ const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
         <Box
           sx={{
             p: 2,
+            flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
             ...scrollbarSx,
           }}
@@ -1874,34 +2015,22 @@ const ReposList: React.FC<{ itemKeys: string[] }> = ({ itemKeys }) => {
           )}
         </Box>
       )}
-      {filtered.length > (page + 1) * ROWS_PER_PAGE && (
-        <Box
-          ref={observerTarget}
-          sx={{
-            height: 60,
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          {isLoadingMore && (
-            <>
-              <CircularProgress size={20} sx={{ color: 'text.secondary' }} />
-              <Typography
-                sx={{
-                  color: 'text.secondary',
-                  fontSize: '0.85rem',
-                  fontFamily: '"JetBrains Mono", monospace',
-                  ml: 1.5,
-                }}
-              >
-                Loading more...
-              </Typography>
-            </>
-          )}
-        </Box>
-      )}
+      <TablePagination
+        rowsPerPageOptions={[]}
+        component="div"
+        count={filtered.length}
+        rowsPerPage={rowsPerPage}
+        page={page}
+        onPageChange={(_e, newPage) => setPage(newPage)}
+        onRowsPerPageChange={() => {}}
+        showFirstButton
+        showLastButton
+        sx={{
+          borderTop: '1px solid',
+          borderColor: 'border.light',
+          color: 'text.secondary',
+        }}
+      />
     </Card>
   );
 };
